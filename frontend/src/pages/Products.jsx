@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getProducts } from '../services/api';
 import ProductCard from '../components/ProductCard';
+import { debounce } from '../utils/debounce';
 import './Products.css';
 
 const Products = () => {
@@ -10,18 +11,14 @@ const Products = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('newest');
 
-  useEffect(() => {
-    fetchProducts();
-  }, [sortBy, searchTerm]);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async (search = searchTerm, sort = sortBy) => {
     setLoading(true);
     setError('');
     
     try {
       const params = {
-        sort: sortBy,
-        ...(searchTerm && { search: searchTerm })
+        sort,
+        ...(search && { search })
       };
       
       const response = await getProducts(params);
@@ -39,14 +36,42 @@ const Products = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, sortBy]);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
+  // Debounced search function
+  const debouncedSearch = useMemo(
+    () => debounce((search) => {
+      fetchProducts(search, sortBy);
+    }, 500),
+    [sortBy, fetchProducts]
+  );
+
+  useEffect(() => {
     fetchProducts();
-  };
+  }, [sortBy]); // Only refetch when sortBy changes
 
-  if (loading) {
+  useEffect(() => {
+    if (searchTerm !== '') {
+      debouncedSearch(searchTerm);
+    } else {
+      fetchProducts('', sortBy);
+    }
+  }, [searchTerm, debouncedSearch, fetchProducts, sortBy]);
+
+  const handleSearch = useCallback((e) => {
+    e.preventDefault();
+    fetchProducts(searchTerm, sortBy);
+  }, [searchTerm, sortBy, fetchProducts]);
+
+  const handleSortChange = useCallback((e) => {
+    setSortBy(e.target.value);
+  }, []);
+
+  const handleSearchInputChange = useCallback((e) => {
+    setSearchTerm(e.target.value);
+  }, []);
+
+  if (loading && products.length === 0) {
     return (
       <div className="products-container">
         <div className="loading-container">
@@ -70,7 +95,7 @@ const Products = () => {
             type="text"
             placeholder="Search products..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchInputChange}
             className="search-input"
           />
           <button type="submit" className="search-button">
@@ -83,7 +108,7 @@ const Products = () => {
           <select
             id="sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+            onChange={handleSortChange}
             className="sort-select"
           >
             <option value="newest">Newest</option>
@@ -106,6 +131,12 @@ const Products = () => {
         </div>
       )}
 
+      {loading && products.length > 0 && (
+        <div className="loading-overlay">
+          <div className="loading-spinner"></div>
+        </div>
+      )}
+
       <div className="products-grid">
         {products.map((product) => (
           <ProductCard key={product.id} product={product} />
@@ -116,4 +147,3 @@ const Products = () => {
 };
 
 export default Products;
-

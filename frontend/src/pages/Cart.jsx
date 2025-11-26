@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCart, updateCartItem, removeFromCart, clearCart } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { formatPrice } from '../utils/formatPrice';
 import './Cart.css';
 
 const Cart = () => {
@@ -14,15 +15,7 @@ const Cart = () => {
   const [updatingItems, setUpdatingItems] = useState(new Set());
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    if (!token) {
-      navigate('/login', { state: { from: { pathname: '/cart' } } });
-      return;
-    }
-    fetchCart();
-  }, [token, navigate]);
-
-  const fetchCart = async () => {
+  const fetchCart = useCallback(async () => {
     setLoading(true);
     setError('');
 
@@ -42,9 +35,17 @@ const Cart = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleUpdateQuantity = async (productId, newQuantity) => {
+  useEffect(() => {
+    if (!token) {
+      navigate('/login', { state: { from: { pathname: '/cart' } } });
+      return;
+    }
+    fetchCart();
+  }, [token, navigate, fetchCart]);
+
+  const handleUpdateQuantity = useCallback(async (productId, newQuantity) => {
     if (newQuantity < 1) {
       return;
     }
@@ -56,7 +57,6 @@ const Cart = () => {
       const response = await updateCartItem(productId, newQuantity);
 
       if (response.success) {
-        // Refresh cart to get updated data
         await fetchCart();
       } else {
         setMessage(response.message || 'Failed to update item');
@@ -73,9 +73,9 @@ const Cart = () => {
         return newSet;
       });
     }
-  };
+  }, [fetchCart]);
 
-  const handleRemoveItem = async (productId) => {
+  const handleRemoveItem = useCallback(async (productId) => {
     setUpdatingItems(prev => new Set(prev).add(productId));
     setMessage('');
 
@@ -83,7 +83,6 @@ const Cart = () => {
       const response = await removeFromCart(productId);
 
       if (response.success) {
-        // Refresh cart to get updated data
         await fetchCart();
         setMessage('Item removed from cart');
         setTimeout(() => setMessage(''), 3000);
@@ -102,9 +101,9 @@ const Cart = () => {
         return newSet;
       });
     }
-  };
+  }, [fetchCart]);
 
-  const handleClearCart = async () => {
+  const handleClearCart = useCallback(async () => {
     if (!window.confirm('Are you sure you want to clear your entire cart?')) {
       return;
     }
@@ -130,16 +129,40 @@ const Cart = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchCart]);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
-  };
+  const handleQuantityChange = useCallback((productId, delta) => {
+    const item = cart?.items?.find(i => i.product?.id === productId);
+    if (!item) return;
+    
+    const newQuantity = item.quantity + delta;
+    if (newQuantity >= 1 && newQuantity <= item.product.stock) {
+      handleUpdateQuantity(productId, newQuantity);
+    }
+  }, [cart, handleUpdateQuantity]);
 
-  if (loading) {
+  const handleQuantityInputChange = useCallback((productId, value) => {
+    const item = cart?.items?.find(i => i.product?.id === productId);
+    if (!item) return;
+    
+    const val = parseInt(value) || 1;
+    const newQuantity = Math.max(1, Math.min(val, item.product.stock));
+    handleUpdateQuantity(productId, newQuantity);
+  }, [cart, handleUpdateQuantity]);
+
+  const cartItems = useMemo(() => {
+    return cart?.items?.filter(item => item.product) || [];
+  }, [cart?.items]);
+
+  const subtotal = useMemo(() => {
+    return cart?.subtotal || 0;
+  }, [cart?.subtotal]);
+
+  const itemCount = useMemo(() => {
+    return cart?.itemCount || 0;
+  }, [cart?.itemCount]);
+
+  if (loading && !cart) {
     return (
       <div className="cart-container">
         <div className="loading-container">
@@ -164,7 +187,7 @@ const Cart = () => {
     );
   }
 
-  if (!cart || !cart.items || cart.items.length === 0) {
+  if (!cart || cartItems.length === 0) {
     return (
       <div className="cart-container">
         <h1>Shopping Cart</h1>
@@ -185,7 +208,7 @@ const Cart = () => {
       <div className="cart-header">
         <h1>Shopping Cart</h1>
         <p className="cart-item-count">
-          {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}
+          {itemCount} {itemCount === 1 ? 'item' : 'items'}
         </p>
       </div>
 
@@ -197,11 +220,7 @@ const Cart = () => {
 
       <div className="cart-content">
         <div className="cart-items">
-          {cart.items.map((item) => {
-            if (!item.product) {
-              return null; // Skip items with missing product data
-            }
-
+          {cartItems.map((item) => {
             const product = item.product;
             const itemTotal = product.price * item.quantity;
             const isUpdating = updatingItems.has(product.id);
@@ -229,9 +248,10 @@ const Cart = () => {
                   <div className="quantity-controls">
                     <button
                       type="button"
-                      onClick={() => handleUpdateQuantity(product.id, item.quantity - 1)}
+                      onClick={() => handleQuantityChange(product.id, -1)}
                       disabled={isUpdating || item.quantity <= 1}
                       className="quantity-button"
+                      aria-label="Decrease quantity"
                     >
                       −
                     </button>
@@ -241,18 +261,16 @@ const Cart = () => {
                       min="1"
                       max={product.stock}
                       value={item.quantity}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 1;
-                        handleUpdateQuantity(product.id, Math.max(1, Math.min(val, product.stock)));
-                      }}
+                      onChange={(e) => handleQuantityInputChange(product.id, e.target.value)}
                       disabled={isUpdating}
                       className="quantity-input"
                     />
                     <button
                       type="button"
-                      onClick={() => handleUpdateQuantity(product.id, item.quantity + 1)}
+                      onClick={() => handleQuantityChange(product.id, 1)}
                       disabled={isUpdating || item.quantity >= product.stock}
                       className="quantity-button"
+                      aria-label="Increase quantity"
                     >
                       +
                     </button>
@@ -289,8 +307,8 @@ const Cart = () => {
         <div className="cart-summary">
           <h2>Order Summary</h2>
           <div className="summary-row">
-            <span>Subtotal ({cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}):</span>
-            <span className="summary-value">{formatPrice(cart.subtotal)}</span>
+            <span>Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'}):</span>
+            <span className="summary-value">{formatPrice(subtotal)}</span>
           </div>
           <div className="summary-row">
             <span>Shipping:</span>
@@ -298,7 +316,7 @@ const Cart = () => {
           </div>
           <div className="summary-row total">
             <span>Total:</span>
-            <span className="summary-value">{formatPrice(cart.subtotal)}</span>
+            <span className="summary-value">{formatPrice(subtotal)}</span>
           </div>
           <button className="checkout-button" disabled>
             Proceed to Checkout
@@ -313,4 +331,3 @@ const Cart = () => {
 };
 
 export default Cart;
-

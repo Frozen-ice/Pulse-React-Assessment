@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getProductById, addToCart } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { formatPrice } from '../utils/formatPrice';
 import './ProductDetail.css';
 
 const ProductDetail = () => {
@@ -17,11 +18,9 @@ const ProductDetail = () => {
   const [cartMessage, setCartMessage] = useState('');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  useEffect(() => {
-    fetchProduct();
-  }, [id]);
-
-  const fetchProduct = async () => {
+  const fetchProduct = useCallback(async () => {
+    if (!id) return;
+    
     setLoading(true);
     setError('');
     
@@ -30,6 +29,7 @@ const ProductDetail = () => {
       
       if (response.success) {
         setProduct(response.data);
+        setQuantity(1); // Reset quantity when product changes
       } else {
         setError(response.message || 'Product not found');
       }
@@ -41,9 +41,13 @@ const ProductDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const handleAddToCart = async () => {
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  const handleAddToCart = useCallback(async () => {
     if (!token) {
       navigate('/login', { state: { from: { pathname: `/products/${id}` } } });
       return;
@@ -69,14 +73,38 @@ const ProductDetail = () => {
     } finally {
       setAddingToCart(false);
     }
-  };
+  }, [token, id, quantity, navigate]);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
-  };
+  const handleQuantityChange = useCallback((delta) => {
+    if (!product) return;
+    setQuantity(prev => {
+      const newQuantity = prev + delta;
+      return Math.max(1, Math.min(newQuantity, product.stock));
+    });
+  }, [product]);
+
+  const handleQuantityInputChange = useCallback((e) => {
+    if (!product) return;
+    const val = parseInt(e.target.value) || 1;
+    setQuantity(Math.max(1, Math.min(val, product.stock)));
+  }, [product]);
+
+  const images = useMemo(() => {
+    return product?.images && product.images.length > 0 
+      ? product.images 
+      : ['https://via.placeholder.com/800x600?text=No+Image'];
+  }, [product?.images]);
+
+  const currentPrice = useMemo(() => {
+    return product ? formatPrice(product.price) : '';
+  }, [product?.price]);
+
+  const comparePrice = useMemo(() => {
+    if (product?.compareAtPrice && product.compareAtPrice > product.price) {
+      return formatPrice(product.compareAtPrice);
+    }
+    return null;
+  }, [product?.compareAtPrice, product?.price]);
 
   if (loading) {
     return (
@@ -102,10 +130,6 @@ const ProductDetail = () => {
       </div>
     );
   }
-
-  const images = product.images && product.images.length > 0 
-    ? product.images 
-    : ['https://via.placeholder.com/800x600?text=No+Image'];
 
   return (
     <div className="product-detail-container">
@@ -133,6 +157,7 @@ const ProductDetail = () => {
                   key={index}
                   className={`thumbnail ${selectedImageIndex === index ? 'active' : ''}`}
                   onClick={() => setSelectedImageIndex(index)}
+                  aria-label={`View image ${index + 1}`}
                 >
                   <img src={image} alt={`${product.name} ${index + 1}`} />
                 </button>
@@ -144,29 +169,27 @@ const ProductDetail = () => {
         <div className="product-info">
           <h1 className="product-title">{product.name}</h1>
 
-          <div className="product-rating-section">
-            {product.rating > 0 && (
-              <>
-                <div className="rating-display">
-                  <span className="rating-stars">
-                    {'★'.repeat(Math.floor(product.rating))}
-                    {'☆'.repeat(5 - Math.floor(product.rating))}
-                  </span>
-                  <span className="rating-value">{product.rating}</span>
-                </div>
-                {product.reviewCount > 0 && (
-                  <span className="review-count">
-                    ({product.reviewCount} {product.reviewCount === 1 ? 'review' : 'reviews'})
-                  </span>
-                )}
-              </>
-            )}
-          </div>
+          {product.rating > 0 && (
+            <div className="product-rating-section">
+              <div className="rating-display">
+                <span className="rating-stars">
+                  {'★'.repeat(Math.floor(product.rating))}
+                  {'☆'.repeat(5 - Math.floor(product.rating))}
+                </span>
+                <span className="rating-value">{product.rating}</span>
+              </div>
+              {product.reviewCount > 0 && (
+                <span className="review-count">
+                  ({product.reviewCount} {product.reviewCount === 1 ? 'review' : 'reviews'})
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="product-price-section">
-            <span className="current-price">{formatPrice(product.price)}</span>
-            {product.compareAtPrice && product.compareAtPrice > product.price && (
-              <span className="compare-price">{formatPrice(product.compareAtPrice)}</span>
+            <span className="current-price">{currentPrice}</span>
+            {comparePrice && (
+              <span className="compare-price">{comparePrice}</span>
             )}
           </div>
 
@@ -210,9 +233,10 @@ const ProductDetail = () => {
                 <div className="quantity-controls">
                   <button
                     type="button"
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    onClick={() => handleQuantityChange(-1)}
                     disabled={quantity <= 1}
                     className="quantity-button"
+                    aria-label="Decrease quantity"
                   >
                     −
                   </button>
@@ -222,17 +246,15 @@ const ProductDetail = () => {
                     min="1"
                     max={product.stock}
                     value={quantity}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 1;
-                      setQuantity(Math.max(1, Math.min(val, product.stock)));
-                    }}
+                    onChange={handleQuantityInputChange}
                     className="quantity-input"
                   />
                   <button
                     type="button"
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                    onClick={() => handleQuantityChange(1)}
                     disabled={quantity >= product.stock}
                     className="quantity-button"
+                    aria-label="Increase quantity"
                   >
                     +
                   </button>
@@ -296,4 +318,3 @@ const ProductDetail = () => {
 };
 
 export default ProductDetail;
-

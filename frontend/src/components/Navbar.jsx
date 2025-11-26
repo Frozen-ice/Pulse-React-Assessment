@@ -1,24 +1,22 @@
-import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, memo } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getCart } from '../services/api';
 import './Navbar.css';
 
-const Navbar = () => {
+const Navbar = memo(() => {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [cartCount, setCartCount] = useState(0);
   const [loadingCart, setLoadingCart] = useState(false);
 
-  useEffect(() => {
-    if (token) {
-      fetchCartCount();
-    } else {
+  const fetchCartCount = useCallback(async () => {
+    if (!token) {
       setCartCount(0);
+      return;
     }
-  }, [token]);
 
-  const fetchCartCount = async () => {
     setLoadingCart(true);
     try {
       const response = await getCart();
@@ -31,13 +29,26 @@ const Navbar = () => {
     } finally {
       setLoadingCart(false);
     }
-  };
+  }, [token]);
 
-  const handleLogout = () => {
+  useEffect(() => {
+    fetchCartCount();
+  }, [fetchCartCount]);
+
+  // Refresh cart count when navigating to/from cart page
+  useEffect(() => {
+    if (token && (location.pathname === '/cart' || location.pathname === '/products')) {
+      fetchCartCount();
+    }
+  }, [location.pathname, token, fetchCartCount]);
+
+  const handleLogout = useCallback(() => {
     logout();
     navigate('/products');
     setCartCount(0);
-  };
+  }, [logout, navigate]);
+
+  const userName = user?.firstName || user?.email || 'User';
 
   return (
     <nav className="navbar">
@@ -64,9 +75,7 @@ const Navbar = () => {
 
           {token ? (
             <div className="user-menu">
-              <span className="user-name">
-                {user?.firstName || user?.email || 'User'}
-              </span>
+              <span className="user-name">{userName}</span>
               <button onClick={handleLogout} className="logout-button">
                 Logout
               </button>
@@ -80,7 +89,8 @@ const Navbar = () => {
       </div>
     </nav>
   );
-};
+});
+
+Navbar.displayName = 'Navbar';
 
 export default Navbar;
-

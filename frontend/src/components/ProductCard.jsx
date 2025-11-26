@@ -1,17 +1,40 @@
+import { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { formatPrice } from '../utils/formatPrice';
 import './ProductCard.css';
 
-const ProductCard = ({ product }) => {
-  const imageUrl = product.images && product.images.length > 0 
-    ? product.images[0] 
-    : 'https://via.placeholder.com/300x300?text=No+Image';
+const ProductCard = memo(({ product }) => {
+  const imageUrl = useMemo(() => {
+    return product.images && product.images.length > 0 
+      ? product.images[0] 
+      : 'https://via.placeholder.com/300x300?text=No+Image';
+  }, [product.images]);
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
-  };
+  const formattedPrice = useMemo(() => formatPrice(product.price), [product.price]);
+
+  const comparePrice = useMemo(() => {
+    if (product.compareAtPrice && product.compareAtPrice > product.price) {
+      return formatPrice(product.compareAtPrice);
+    }
+    return null;
+  }, [product.compareAtPrice, product.price]);
+
+  const truncatedDescription = useMemo(() => {
+    if (!product.description) return null;
+    return product.description.length > 100 
+      ? `${product.description.substring(0, 100)}...` 
+      : product.description;
+  }, [product.description]);
+
+  const ratingStars = useMemo(() => {
+    if (product.rating <= 0) return null;
+    const fullStars = Math.floor(product.rating);
+    const emptyStars = 5 - fullStars;
+    return {
+      full: '★'.repeat(fullStars),
+      empty: '☆'.repeat(emptyStars)
+    };
+  }, [product.rating]);
 
   return (
     <Link to={`/products/${product.id}`} className="product-card">
@@ -33,33 +56,27 @@ const ProductCard = ({ product }) => {
       <div className="product-info">
         <h3 className="product-name">{product.name}</h3>
         
-        {product.description && (
-          <p className="product-description">
-            {product.description.length > 100 
-              ? `${product.description.substring(0, 100)}...` 
-              : product.description}
-          </p>
+        {truncatedDescription && (
+          <p className="product-description">{truncatedDescription}</p>
         )}
 
-        <div className="product-rating">
-          {product.rating > 0 && (
-            <>
-              <span className="rating-stars">
-                {'★'.repeat(Math.floor(product.rating))}
-                {'☆'.repeat(5 - Math.floor(product.rating))}
-              </span>
-              <span className="rating-value">({product.rating})</span>
-              {product.reviewCount > 0 && (
-                <span className="review-count">({product.reviewCount})</span>
-              )}
-            </>
-          )}
-        </div>
+        {ratingStars && (
+          <div className="product-rating">
+            <span className="rating-stars">
+              {ratingStars.full}
+              {ratingStars.empty}
+            </span>
+            <span className="rating-value">({product.rating})</span>
+            {product.reviewCount > 0 && (
+              <span className="review-count">({product.reviewCount})</span>
+            )}
+          </div>
+        )}
 
         <div className="product-price">
-          <span className="current-price">{formatPrice(product.price)}</span>
-          {product.compareAtPrice && product.compareAtPrice > product.price && (
-            <span className="compare-price">{formatPrice(product.compareAtPrice)}</span>
+          <span className="current-price">{formattedPrice}</span>
+          {comparePrice && (
+            <span className="compare-price">{comparePrice}</span>
           )}
         </div>
 
@@ -69,7 +86,8 @@ const ProductCard = ({ product }) => {
       </div>
     </Link>
   );
-};
+});
+
+ProductCard.displayName = 'ProductCard';
 
 export default ProductCard;
-

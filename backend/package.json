@@ -2,7 +2,7 @@
   "name": "marketplace-api",
   "version": "1.0.0",
   "description": "Complex backend API for marketplace with mockup data",
-  "main": "src/server.js",
+  "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",

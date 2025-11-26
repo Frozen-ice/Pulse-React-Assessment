@@ -16,6 +16,12 @@ import cartRoutes from './routes/cartRoutes.js';
 // Load environment variables
 dotenv.config();
 
+// Set default JWT_SECRET if not provided (for development only)
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'dev-secret-key-change-in-production';
+  console.warn('⚠️  WARNING: JWT_SECRET not set, using default. This should be changed in production!');
+}
+
 // Provide CommonJS require for ESM files
 if (!global.require) {
   global.require = createRequire(import.meta.url);
@@ -37,6 +43,7 @@ const initializeMockData = () => {
   db.getCategories().length = 0;
   db.getOrders().length = 0;
   db.getReviews().length = 0;
+  // Note: Cart is cleared automatically on server restart (in-memory)
 
   // Populate with mock data
   mockData.users.forEach(user => db.createUser(user));
@@ -44,7 +51,6 @@ const initializeMockData = () => {
   mockData.products.forEach(product => db.createProduct(product));
   mockData.orders.forEach(order => db.createOrder(order));
   mockData.reviews.forEach(review => db.createReview(review));
-  mockData.orders.forEach(order => db.getOrder());
 };
 
 // Initialize database with mock data
