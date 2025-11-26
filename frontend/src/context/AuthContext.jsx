@@ -1,4 +1,5 @@
 import { createContext, useState, useContext, useEffect } from 'react';
+import { getProfile } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -8,14 +9,28 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check if token exists and validate if needed (for now just check existence)
-        if (token) {
-            // In a real app, we might fetch user profile here
-            // For this assessment, we'll assume valid if token exists
-            // We could decode the token if it was a real JWT to get user info
-            setUser({ email: 'john.doe@example.com' }); // Mock user for now or decode from token
-        }
-        setLoading(false);
+        // Fetch user profile if token exists
+        const fetchUserProfile = async () => {
+            if (token) {
+                try {
+                    const response = await getProfile();
+                    if (response.success) {
+                        setUser(response.data);
+                    } else {
+                        // Token might be invalid, clear it
+                        setToken(null);
+                        localStorage.removeItem('token');
+                    }
+                } catch (error) {
+                    // Token invalid or expired, clear it
+                    setToken(null);
+                    localStorage.removeItem('token');
+                }
+            }
+            setLoading(false);
+        };
+
+        fetchUserProfile();
     }, [token]);
 
     const login = (newToken, userData) => {
